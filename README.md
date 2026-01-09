@@ -23,7 +23,7 @@ OpenRedact Clinical is a production-ready application designed to anonymize sens
 - Python 3.11
 - FastAPI 0.115.0 (Web framework)
 - Spacy 3.7.5 & Stanza 1.8.2 (NLP)
-- PyTorch 2.3.1 (Machine learning)
+- PyTorch 2.6.0 (Machine learning)
 - Gunicorn + Uvicorn (Production server)
 
 **Frontend:**
