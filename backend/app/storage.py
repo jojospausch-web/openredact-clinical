@@ -8,7 +8,8 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # Configuration
-STORAGE_DIR = Path(os.getenv("OPENREDACT_STORAGE_DIR", "/app/storage"))
+_default_storage = "/app/storage" if os.path.exists("/app") else "/tmp/openredact-storage"
+STORAGE_DIR = Path(os.getenv("OPENREDACT_STORAGE_DIR", _default_storage))
 WHITELIST_FILE = STORAGE_DIR / "whitelist.json"
 TEMPLATES_FILE = STORAGE_DIR / "templates.json"
 

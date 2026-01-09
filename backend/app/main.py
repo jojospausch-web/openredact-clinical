@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.endpoints import router
@@ -11,13 +12,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
+    # Startup
+    ensure_storage_dir()
+    logger.info("OpenRedact Clinical API started")
+    yield
+    # Shutdown
+    logger.info("OpenRedact Clinical API shutting down")
+
+
 # Create FastAPI app
 app = FastAPI(
     title="OpenRedact Clinical",
     description="Medical document anonymization for German clinical documents",
     version="2.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # CORS configuration
@@ -38,13 +52,6 @@ app.add_middleware(
 
 # Include API router
 app.include_router(router)
-
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    """Initialize storage on startup"""
-    ensure_storage_dir()
-    logger.info("OpenRedact Clinical API started")
 
 # Root endpoint
 @app.get("/")
