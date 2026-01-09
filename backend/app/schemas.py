@@ -129,7 +129,7 @@ class TemplatesResponse(CamelBaseModel):
 
 class TemplateImport(CamelBaseModel):
     """Import templates"""
-    templates: Dict[str, TemplateData] = Field(max_length=1000)
+    templates: Dict[str, TemplateData]
 
 
 class SuccessResponse(CamelBaseModel):

@@ -111,6 +111,25 @@ async def get_templates():
     return TemplatesResponse(templates=templates)
 
 
+@router.post(
+    "/templates/import",
+    response_model=SuccessResponse,
+    summary="Import templates"
+)
+async def import_templates(import_data: TemplateImport):
+    """Import multiple templates"""
+    success = TemplateStorage.import_templates(import_data.templates)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to import templates (limit exceeded)"
+        )
+    return SuccessResponse(
+        success=True, 
+        message=f"Imported {len(import_data.templates)} templates"
+    )
+
+
 @router.get(
     "/templates/{template_id}",
     response_model=TemplateResponse,
@@ -158,25 +177,6 @@ async def delete_template(template_id: str):
             detail="Failed to delete template"
         )
     return SuccessResponse(success=True, message=f"Template '{template_id}' deleted")
-
-
-@router.post(
-    "/templates/import",
-    response_model=SuccessResponse,
-    summary="Import templates"
-)
-async def import_templates(import_data: TemplateImport):
-    """Import multiple templates"""
-    success = TemplateStorage.import_templates(import_data.templates)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to import templates (limit exceeded)"
-        )
-    return SuccessResponse(
-        success=True, 
-        message=f"Imported {len(import_data.templates)} templates"
-    )
 
 
 # ===== PII Detection & Anonymization Endpoints =====

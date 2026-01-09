@@ -145,8 +145,8 @@ class TemplateStorage:
         return True
 
     @staticmethod
-    def import_templates(new_templates: Dict[str, Dict[str, Any]]) -> bool:
-        """Import multiple templates"""
+    def import_templates(new_templates: Dict[str, Any]) -> bool:
+        """Import multiple templates (can be dict or Pydantic models)"""
         templates = TemplateStorage.get_all()
         if len(templates) + len(new_templates) > MAX_TEMPLATES:
             logger.error("Import would exceed template limit")
@@ -154,9 +154,17 @@ class TemplateStorage:
         
         now = datetime.utcnow().isoformat()
         for tid, tdata in new_templates.items():
+            # Convert Pydantic model to dict if needed
+            if hasattr(tdata, 'model_dump'):
+                template_dict = tdata.model_dump()
+            elif isinstance(tdata, dict):
+                template_dict = tdata.copy()
+            else:
+                template_dict = dict(tdata)
+            
             if tid not in templates:
-                tdata['created_at'] = now
-            tdata['updated_at'] = now
-            templates[tid] = tdata
+                template_dict['created_at'] = now
+            template_dict['updated_at'] = now
+            templates[tid] = template_dict
         
         return save_json_file(TEMPLATES_FILE, templates)
