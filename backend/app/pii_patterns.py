@@ -14,11 +14,12 @@ class RegexPIIDetector:
     
     # German phone number patterns
     PHONE_PATTERNS = [
-        # Landline: 030-12345678, 030/12345678, 030 12345678
-        r'\b0\d{2,4}[-/\s]?\d{6,10}\b',
-        # Mobile: +49 170 1234567, 0170-1234567
-        r'\+49[-\s]?\d{3,4}[-\s]?\d{6,9}\b',
-        r'\b0\d{3,4}[-/\s]?\d{6,9}\b',
+        # International: +49 170 1234567, +49-170-1234567
+        r'\+49[\s-]?\d{2,4}[\s-]?\d{6,9}\b',
+        # Landline with separator: 030-12345678, 030/12345678, 030 12345678
+        r'\b0\d{2,3}[\s/-]\d{6,10}\b',
+        # Mobile without separator: 01701234567
+        r'\b0\d{9,11}\b',
     ]
     
     # Email patterns (with German umlauts)
