@@ -3,7 +3,8 @@ API Router - All API endpoints with NLP integration
 """
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, UploadFile, File
+from fastapi.responses import FileResponse
 
 from app.schemas import (
     # Whitelist schemas
@@ -23,10 +24,16 @@ from app.schemas import (
     AnonymizeRequest,
     AnonymizeResponse,
     AnonymizationMechanism,
+    # PDF schemas
+    UploadPDFResponse,
+    AnonymizePDFRequest,
+    AnonymizePDFResponse,
+    ListPDFsResponse,
 )
 from app.storage import WhitelistStorage, TemplateStorage
 from app.nlp import get_nlp_manager
 from app.anonymizer import anonymizer
+from app.pdf_manager import pdf_manager
 
 logger = logging.getLogger(__name__)
 
@@ -294,3 +301,161 @@ async def anonymize_text(request: AnonymizeRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Anonymization failed: {str(e)}"
         )
+
+
+# ===== PDF ENDPOINTS =====
+
+@router.post("/upload-pdf", response_model=UploadPDFResponse)
+async def upload_pdf(file: UploadFile = File(...)):
+    """Upload PDF and extract text"""
+    
+    # Validate content type
+    if file.content_type != "application/pdf":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be PDF format"
+        )
+    
+    try:
+        # Read file content
+        content = await file.read()
+        
+        # Save and process
+        result = pdf_manager.save_uploaded_pdf(
+            file_content=content,
+            filename=file.filename or "document.pdf"
+        )
+        
+        return UploadPDFResponse(**result)
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"PDF processing failed: {str(e)}"
+        )
+
+@router.post("/anonymize-pdf", response_model=AnonymizePDFResponse)
+async def anonymize_pdf(request: AnonymizePDFRequest):
+    """Anonymize PDF: extract text → NLP → anonymize → generate new PDF"""
+    
+    try:
+        # Get PDF path
+        pdf_path = pdf_manager.get_pdf_path(request.pdf_id)
+        if not pdf_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"PDF {request.pdf_id} not found"
+            )
+        
+        # Extract text
+        text = pdf_manager.extract_text(pdf_path)
+        if not text:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Could not extract text from PDF"
+            )
+        
+        # Get template if specified
+        template_data = None
+        if request.template_id:
+            template_data = TemplateStorage.get(request.template_id)
+            if not template_data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Template '{request.template_id}' not found"
+                )
+        
+        # Prepare anonymization
+        default_mechanism = AnonymizationMechanism(type="redact")
+        mechanisms_by_tag = {}
+        
+        if template_data:
+            default_mechanism = AnonymizationMechanism(**template_data["default_mechanism"])
+            mechanisms_by_tag = {
+                tag: AnonymizationMechanism(**mech)
+                for tag, mech in template_data.get("mechanisms_by_tag", {}).items()
+            }
+        
+        # Find entities
+        nlp_manager = get_nlp_manager()
+        entities = nlp_manager.find_all_entities(text, use_both=True)
+        
+        # Get whitelist
+        whitelist = set(WhitelistStorage.get_all())
+        
+        # Anonymize text
+        anonymization_result = anonymizer.anonymize_text(
+            text=text,
+            entities=entities,
+            default_mechanism=default_mechanism,
+            mechanisms_by_tag=mechanisms_by_tag,
+            whitelist=whitelist
+        )
+        
+        # Generate new PDF
+        pdf_result = pdf_manager.generate_anonymized_pdf(
+            original_pdf_id=request.pdf_id,
+            anonymized_text=anonymization_result["anonymized_text"]
+        )
+        
+        return AnonymizePDFResponse(
+            anonymized_pdf_id=pdf_result["pdf_id"],
+            original_pdf_id=request.pdf_id,
+            filename=pdf_result["filename"],
+            file_size_mb=pdf_result["file_size_mb"],
+            entities_found=anonymization_result["entities_found"],
+            entities_anonymized=anonymization_result["entities_anonymized"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"PDF anonymization failed: {str(e)}"
+        )
+
+@router.get("/download-pdf/{pdf_id}")
+async def download_pdf(pdf_id: str):
+    """Download PDF by ID"""
+    
+    pdf_path = pdf_manager.get_pdf_path(pdf_id)
+    if not pdf_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"PDF {pdf_id} not found"
+        )
+    
+    metadata = pdf_manager._get_metadata(pdf_id)
+    filename = metadata.get("original_filename", "document.pdf")
+    
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename=filename
+    )
+
+@router.delete("/pdf/{pdf_id}", response_model=SuccessResponse)
+async def delete_pdf(pdf_id: str):
+    """Delete PDF"""
+    
+    success = pdf_manager.delete_pdf(pdf_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"PDF {pdf_id} not found"
+        )
+    
+    return SuccessResponse(success=True, message="PDF deleted")
+
+@router.get("/pdfs", response_model=ListPDFsResponse)
+async def list_pdfs():
+    """List all uploaded/anonymized PDFs"""
+    
+    pdfs = pdf_manager.list_pdfs()
+    return ListPDFsResponse(pdfs=pdfs, total=len(pdfs))

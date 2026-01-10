@@ -199,3 +199,38 @@ class AnonymizeResponse(CamelBaseModel):
     entities_found: int
     entities_anonymized: int
     replacements: List[ReplacementInfo]
+
+
+# ===== PDF Schemas =====
+
+class UploadPDFResponse(CamelBaseModel):
+    pdf_id: str
+    filename: str
+    file_size_mb: float
+    text_preview: str
+    text_length: int
+
+class AnonymizePDFRequest(CamelBaseModel):
+    pdf_id: str = Field(..., description="ID of uploaded PDF")
+    template_id: Optional[str] = Field(None, description="Template to use")
+
+class AnonymizePDFResponse(CamelBaseModel):
+    anonymized_pdf_id: str
+    original_pdf_id: str
+    filename: str
+    file_size_mb: float
+    entities_found: int
+    entities_anonymized: int
+
+class PDFMetadata(CamelBaseModel):
+    id: str
+    original_filename: str
+    file_size_mb: float
+    uploaded_at: Optional[str] = None
+    created_at: Optional[str] = None
+    status: str
+    original_pdf_id: Optional[str] = None
+
+class ListPDFsResponse(CamelBaseModel):
+    pdfs: List[PDFMetadata]
+    total: int
