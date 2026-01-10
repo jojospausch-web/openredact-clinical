@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Set
 import spacy
 import stanza
 from spacy.tokens import Doc
+from app.pii_patterns import regex_detector
 
 logger = logging.getLogger(__name__)
 
@@ -75,17 +76,21 @@ class NLPManager:
         return entities
     
     def find_all_entities(self, text: str, use_both: bool = True) -> List[Dict[str, Any]]:
-        """Find entities using both models and merge results"""
+        """Find entities using NLP AND regex patterns"""
         entities = []
         
-        # spaCy entities
+        # 1. Regex-based detection FIRST (titles, structured data)
+        regex_entities = regex_detector.find_all(text)
+        entities.extend(regex_entities)
+        
+        # 2. spaCy entities
         entities.extend(self.find_entities_spacy(text))
         
-        # Stanza entities (if enabled)
-        if use_both:
+        # 3. Stanza entities (if enabled)
+        if use_both and self.stanza_nlp is not None:
             entities.extend(self.find_entities_stanza(text))
         
-        # Deduplicate overlapping entities
+        # 4. Deduplicate overlapping entities
         entities = self._deduplicate_entities(entities)
         
         return entities

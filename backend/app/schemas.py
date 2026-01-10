@@ -148,8 +148,10 @@ class ErrorResponse(CamelBaseModel):
 
 class AnonymizationMechanism(CamelBaseModel):
     """Anonymization mechanism configuration"""
-    type: str = Field(description="Mechanism type: redact, replace, hash, partial, mask")
+    type: str = Field(description="Mechanism type: redact, replace, hash, partial, mask, shift")
     replacement: Optional[str] = Field(default=None, description="Replacement text for 'replace' type")
+    shift_months: Optional[int] = Field(default=None, description="Months to shift dates (can be negative)")
+    shift_days: Optional[int] = Field(default=None, description="Days to shift dates (can be negative)")
 
 
 class FindPIIsRequest(CamelBaseModel):
