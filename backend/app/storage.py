@@ -72,24 +72,24 @@ class WhitelistStorage:
 
     @staticmethod
     def add(entry: str) -> bool:
-        """Add whitelist entry"""
+        """Add whitelist entry. Returns False if already exists."""
         whitelist = WhitelistStorage.get_all()
+        if entry in whitelist:
+            return False  # Already exists
         if len(whitelist) >= MAX_WHITELIST_ENTRIES:
             logger.error(f"Whitelist limit reached: {MAX_WHITELIST_ENTRIES}")
             return False
-        if entry not in whitelist:
-            whitelist.append(entry)
-            return save_json_file(WHITELIST_FILE, whitelist)
-        return True
+        whitelist.append(entry)
+        return save_json_file(WHITELIST_FILE, whitelist)
 
     @staticmethod
     def remove(entry: str) -> bool:
-        """Remove whitelist entry"""
+        """Remove whitelist entry. Returns False if not found."""
         whitelist = WhitelistStorage.get_all()
-        if entry in whitelist:
-            whitelist.remove(entry)
-            return save_json_file(WHITELIST_FILE, whitelist)
-        return True
+        if entry not in whitelist:
+            return False  # Not found
+        whitelist.remove(entry)
+        return save_json_file(WHITELIST_FILE, whitelist)
 
     @staticmethod
     def set_all(entries: List[str]) -> bool:
@@ -127,7 +127,7 @@ class TemplateStorage:
             return False
         
         # Add timestamps
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(datetime.UTC).isoformat() if hasattr(datetime, 'UTC') else datetime.utcnow().isoformat()
         if template_id not in templates:
             template_data['created_at'] = now
         template_data['updated_at'] = now
@@ -152,7 +152,7 @@ class TemplateStorage:
             logger.error("Import would exceed template limit")
             return False
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(datetime.UTC).isoformat() if hasattr(datetime, 'UTC') else datetime.utcnow().isoformat()
         for tid, tdata in new_templates.items():
             # Convert Pydantic model to dict if needed
             if hasattr(tdata, 'model_dump'):

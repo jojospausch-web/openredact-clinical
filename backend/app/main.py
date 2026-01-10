@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.endpoints import router
+from app.routers.api import router
 from app.storage import ensure_storage_dir
 
 # Configure logging
