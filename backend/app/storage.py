@@ -72,24 +72,24 @@ class WhitelistStorage:
 
     @staticmethod
     def add(entry: str) -> bool:
-        """Add whitelist entry"""
+        """Add whitelist entry. Returns False if already exists."""
         whitelist = WhitelistStorage.get_all()
+        if entry in whitelist:
+            return False  # Already exists
         if len(whitelist) >= MAX_WHITELIST_ENTRIES:
             logger.error(f"Whitelist limit reached: {MAX_WHITELIST_ENTRIES}")
             return False
-        if entry not in whitelist:
-            whitelist.append(entry)
-            return save_json_file(WHITELIST_FILE, whitelist)
-        return True
+        whitelist.append(entry)
+        return save_json_file(WHITELIST_FILE, whitelist)
 
     @staticmethod
     def remove(entry: str) -> bool:
-        """Remove whitelist entry"""
+        """Remove whitelist entry. Returns False if not found."""
         whitelist = WhitelistStorage.get_all()
-        if entry in whitelist:
-            whitelist.remove(entry)
-            return save_json_file(WHITELIST_FILE, whitelist)
-        return True
+        if entry not in whitelist:
+            return False  # Not found
+        whitelist.remove(entry)
+        return save_json_file(WHITELIST_FILE, whitelist)
 
     @staticmethod
     def set_all(entries: List[str]) -> bool:

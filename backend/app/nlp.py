@@ -1,0 +1,133 @@
+"""
+NLP Manager for German clinical text analysis using spaCy and Stanza.
+"""
+import logging
+from typing import List, Dict, Any, Set
+import spacy
+import stanza
+from spacy.tokens import Doc
+
+logger = logging.getLogger(__name__)
+
+
+class NLPManager:
+    """Manages NLP models for German clinical text analysis"""
+    
+    def __init__(self):
+        """Initialize spaCy and Stanza models"""
+        try:
+            # Load spaCy German model
+            logger.info("Loading spaCy German model...")
+            self.spacy_nlp = spacy.load("de_core_news_sm")
+            logger.info("spaCy model loaded successfully")
+        except OSError as e:
+            logger.error(f"Failed to load spaCy model: {e}")
+            logger.info("Attempting to download de_core_news_sm...")
+            import subprocess
+            subprocess.run(["python", "-m", "spacy", "download", "de_core_news_sm"], check=True)
+            self.spacy_nlp = spacy.load("de_core_news_sm")
+        
+        try:
+            # Load Stanza German model
+            logger.info("Loading Stanza German model...")
+            self.stanza_nlp = stanza.Pipeline(
+                "de", 
+                processors="tokenize,ner",
+                download_method=None  # Don't auto-download
+            )
+            logger.info("Stanza model loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load Stanza model: {e}")
+            logger.info("Attempting to download Stanza German model...")
+            stanza.download("de")
+            self.stanza_nlp = stanza.Pipeline(
+                "de", 
+                processors="tokenize,ner",
+                download_method=None
+            )
+        
+    def find_entities_spacy(self, text: str) -> List[Dict[str, Any]]:
+        """Find entities using spaCy"""
+        doc = self.spacy_nlp(text)
+        entities = []
+        for ent in doc.ents:
+            entities.append({
+                "text": ent.text,
+                "start": ent.start_char,
+                "end": ent.end_char,
+                "label": ent.label_,
+                "source": "spacy"
+            })
+        return entities
+    
+    def find_entities_stanza(self, text: str) -> List[Dict[str, Any]]:
+        """Find entities using Stanza"""
+        doc = self.stanza_nlp(text)
+        entities = []
+        for sentence in doc.sentences:
+            for ent in sentence.ents:
+                entities.append({
+                    "text": ent.text,
+                    "start": ent.start_char,
+                    "end": ent.end_char,
+                    "label": ent.type,
+                    "source": "stanza"
+                })
+        return entities
+    
+    def find_all_entities(self, text: str, use_both: bool = True) -> List[Dict[str, Any]]:
+        """Find entities using both models and merge results"""
+        entities = []
+        
+        # spaCy entities
+        entities.extend(self.find_entities_spacy(text))
+        
+        # Stanza entities (if enabled)
+        if use_both:
+            entities.extend(self.find_entities_stanza(text))
+        
+        # Deduplicate overlapping entities
+        entities = self._deduplicate_entities(entities)
+        
+        return entities
+    
+    def _deduplicate_entities(self, entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove duplicate/overlapping entities, prefer longer spans"""
+        if not entities:
+            return []
+        
+        # Sort by start position, then by length (longest first)
+        sorted_entities = sorted(
+            entities,
+            key=lambda e: (e["start"], -(e["end"] - e["start"]))
+        )
+        
+        deduplicated = []
+        for entity in sorted_entities:
+            # Check if overlaps with existing entities
+            overlaps = False
+            for existing in deduplicated:
+                if self._entities_overlap(entity, existing):
+                    overlaps = True
+                    break
+            
+            if not overlaps:
+                deduplicated.append(entity)
+        
+        return deduplicated
+    
+    def _entities_overlap(self, e1: Dict, e2: Dict) -> bool:
+        """Check if two entities overlap"""
+        return not (e1["end"] <= e2["start"] or e2["end"] <= e1["start"])
+
+
+# Global instance (initialized lazily)
+_nlp_manager = None
+
+
+def get_nlp_manager() -> NLPManager:
+    """Get or create the global NLP manager instance"""
+    global _nlp_manager
+    if _nlp_manager is None:
+        _nlp_manager = NLPManager()
+    return _nlp_manager

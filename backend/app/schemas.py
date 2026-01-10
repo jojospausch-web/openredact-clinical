@@ -142,3 +142,60 @@ class ErrorResponse(CamelBaseModel):
     """Error response"""
     detail: str
     error_code: Optional[str] = None
+
+
+# ===== New NLP Schemas for PR #4 =====
+
+class AnonymizationMechanism(CamelBaseModel):
+    """Anonymization mechanism configuration"""
+    type: str = Field(description="Mechanism type: redact, replace, hash, partial, mask")
+    replacement: Optional[str] = Field(default=None, description="Replacement text for 'replace' type")
+
+
+class FindPIIsRequest(CamelBaseModel):
+    """Request for finding PIIs in text using NLP"""
+    text: str = Field(..., min_length=1, max_length=100000)
+    use_both_models: bool = Field(default=True, description="Use both spaCy and Stanza")
+
+
+class EntityInfo(CamelBaseModel):
+    """Entity detected by NLP"""
+    text: str
+    start: int
+    end: int
+    label: str
+    source: str
+    whitelisted: bool = False
+
+
+class FindPIIsResponse(CamelBaseModel):
+    """Response with detected entities"""
+    text: str
+    entities: List[EntityInfo]
+    total_found: int
+    whitelisted_count: int
+
+
+class AnonymizeRequest(CamelBaseModel):
+    """Request for anonymizing text"""
+    text: str = Field(..., min_length=1, max_length=100000)
+    template_id: Optional[str] = Field(None, description="Template ID to use")
+
+
+class ReplacementInfo(CamelBaseModel):
+    """Information about a single replacement"""
+    original: str
+    replacement: str
+    start: int
+    end: int
+    label: str
+    mechanism: str
+
+
+class AnonymizeResponse(CamelBaseModel):
+    """Response with anonymized text"""
+    original_text: str
+    anonymized_text: str
+    entities_found: int
+    entities_anonymized: int
+    replacements: List[ReplacementInfo]
