@@ -28,6 +28,9 @@ def test_get_whitelist():
 
 def test_add_whitelist_entry():
     """Test add whitelist entry"""
+    # Clear whitelist first to ensure test_entry doesn't exist
+    client.put("/api/whitelist", json={"entries": []})
+    
     response = client.post(
         "/api/whitelist",
         json={"entry": "test_entry"}
@@ -43,10 +46,12 @@ def test_get_templates():
 
 
 def test_find_piis_placeholder():
-    """Test PII detection (placeholder)"""
+    """Test PII detection (now fully implemented)"""
     response = client.post(
         "/api/find-piis",
-        json={"text": "Test text", "language": "de"}
+        json={"text": "Test text", "useBothModels": True}
     )
     assert response.status_code == 200
-    assert "piis" in response.json()
+    data = response.json()
+    assert "entities" in data
+    assert "totalFound" in data

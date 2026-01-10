@@ -127,7 +127,7 @@ class TemplateStorage:
             return False
         
         # Add timestamps
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(datetime.UTC).isoformat() if hasattr(datetime, 'UTC') else datetime.utcnow().isoformat()
         if template_id not in templates:
             template_data['created_at'] = now
         template_data['updated_at'] = now
@@ -152,7 +152,7 @@ class TemplateStorage:
             logger.error("Import would exceed template limit")
             return False
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(datetime.UTC).isoformat() if hasattr(datetime, 'UTC') else datetime.utcnow().isoformat()
         for tid, tdata in new_templates.items():
             # Convert Pydantic model to dict if needed
             if hasattr(tdata, 'model_dump'):

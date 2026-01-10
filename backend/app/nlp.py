@@ -27,8 +27,9 @@ class NLPManager:
             subprocess.run(["python", "-m", "spacy", "download", "de_core_news_sm"], check=True)
             self.spacy_nlp = spacy.load("de_core_news_sm")
         
+        # Try to load Stanza German model (optional)
+        self.stanza_nlp = None
         try:
-            # Load Stanza German model
             logger.info("Loading Stanza German model...")
             self.stanza_nlp = stanza.Pipeline(
                 "de", 
@@ -37,14 +38,8 @@ class NLPManager:
             )
             logger.info("Stanza model loaded successfully")
         except Exception as e:
-            logger.error(f"Failed to load Stanza model: {e}")
-            logger.info("Attempting to download Stanza German model...")
-            stanza.download("de")
-            self.stanza_nlp = stanza.Pipeline(
-                "de", 
-                processors="tokenize,ner",
-                download_method=None
-            )
+            logger.warning(f"Stanza model not available: {e}")
+            logger.warning("Continuing with spaCy only. Install Stanza models manually if needed.")
         
     def find_entities_spacy(self, text: str) -> List[Dict[str, Any]]:
         """Find entities using spaCy"""
@@ -62,6 +57,10 @@ class NLPManager:
     
     def find_entities_stanza(self, text: str) -> List[Dict[str, Any]]:
         """Find entities using Stanza"""
+        if self.stanza_nlp is None:
+            logger.warning("Stanza model not available, skipping")
+            return []
+        
         doc = self.stanza_nlp(text)
         entities = []
         for sentence in doc.sentences:
