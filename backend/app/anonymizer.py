@@ -4,15 +4,18 @@ Anonymization engine for text based on detected entities and templates.
 import logging
 import hashlib
 from typing import List, Dict, Any, Set, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from app.date_shifter import DateShifter
 
 logger = logging.getLogger(__name__)
 
 
 class AnonymizationMechanism(BaseModel):
     """Anonymization mechanism configuration"""
-    type: str  # redact, replace, hash, partial, mask
+    type: str  # redact, replace, hash, partial, mask, shift
     replacement: Optional[str] = None
+    shift_months: Optional[int] = Field(default=None, description="Months to shift dates (can be negative)")
+    shift_days: Optional[int] = Field(default=None, description="Days to shift dates (can be negative)")
 
 
 class Anonymizer:
@@ -59,7 +62,11 @@ class Anonymizer:
             )
             
             # Apply mechanism
-            replacement = self._apply_mechanism(entity["text"], mechanism)
+            replacement = self._apply_mechanism(
+                entity["text"],
+                mechanism,
+                entity_data=entity
+            )
             
             # Replace in text
             start = entity["start"]
@@ -90,7 +97,8 @@ class Anonymizer:
     def _apply_mechanism(
         self,
         text: str,
-        mechanism: AnonymizationMechanism
+        mechanism: AnonymizationMechanism,
+        entity_data: Dict[str, Any] = None
     ) -> str:
         """Apply anonymization mechanism to text"""
         
@@ -114,6 +122,19 @@ class Anonymizer:
         elif mechanism.type == "mask":
             # Replace with asterisks
             return "*" * len(text)
+        
+        elif mechanism.type == "shift":
+            # Date shifting
+            if entity_data and entity_data.get("label") == "DATE":
+                shifter = DateShifter(
+                    shift_months=getattr(mechanism, 'shift_months', None) or 0,
+                    shift_days=getattr(mechanism, 'shift_days', None) or 0
+                )
+                date_groups = entity_data.get("groups")
+                return shifter.shift_date(text, date_groups)
+            else:
+                # Not a date, redact instead
+                return "[REDACTED]"
         
         else:
             # Default: redact
