@@ -31,6 +31,7 @@ from app.schemas import (
     ListPDFsResponse,
 )
 from app.storage import WhitelistStorage, TemplateStorage
+from app.blacklist_manager import blacklist_manager
 from app.nlp import get_nlp_manager
 from app.anonymizer import anonymizer
 from app.pdf_manager import pdf_manager
@@ -100,6 +101,68 @@ async def update_whitelist(bulk: WhitelistBulkUpdate):
             detail="Failed to update whitelist (limit exceeded or storage error)"
         )
     return SuccessResponse(success=True, message=f"Whitelist updated with {len(bulk.entries)} entries")
+
+
+# ===== BLACKLIST ENDPOINTS =====
+
+@router.get(
+    "/blacklist",
+    response_model=WhitelistResponse,
+    summary="Get all blacklist entries"
+)
+async def get_blacklist():
+    """Retrieve all blacklist entries"""
+    entries = blacklist_manager.get_all()
+    return WhitelistResponse(entries=entries)
+
+
+@router.post(
+    "/blacklist",
+    response_model=SuccessResponse,
+    summary="Add blacklist entry",
+    status_code=status.HTTP_201_CREATED
+)
+async def add_blacklist_entry(entry: WhitelistEntry):
+    """Add new entry to blacklist (force anonymization)"""
+    success = blacklist_manager.add_entry(entry.entry)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Entry already exists or limit exceeded"
+        )
+    return SuccessResponse(success=True, message="Entry added")
+
+
+@router.delete(
+    "/blacklist/{entry}",
+    response_model=SuccessResponse,
+    summary="Remove blacklist entry"
+)
+async def remove_blacklist_entry(entry: str):
+    """Remove entry from blacklist"""
+    success = blacklist_manager.remove_entry(entry)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entry not found"
+        )
+    return SuccessResponse(success=True, message="Entry removed")
+
+
+@router.put(
+    "/blacklist",
+    response_model=SuccessResponse,
+    summary="Replace entire blacklist"
+)
+async def update_blacklist(bulk: WhitelistBulkUpdate):
+    """Replace all blacklist entries"""
+    success = blacklist_manager.set_all(bulk.entries)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to update blacklist (limit exceeded or storage error)"
+        )
+    return SuccessResponse(success=True, message=f"Blacklist updated with {len(bulk.entries)} entries")
 
 
 # ===== TEMPLATE ENDPOINTS =====
@@ -209,9 +272,9 @@ async def find_piis(request: FindPIIsRequest):
         )
         
         # Get whitelist
-        whitelist = set(WhitelistStorage.get_all())
+        whitelist = WhitelistStorage.get_all()
         
-        # Filter by whitelist
+        # Apply smart whitelist matching
         filtered_entities = [
             {
                 "text": e["text"],
@@ -219,7 +282,11 @@ async def find_piis(request: FindPIIsRequest):
                 "end": e["end"],
                 "label": e["label"],
                 "source": e["source"],
-                "whitelisted": e["text"] in whitelist
+                "whitelisted": (
+                    # Blacklisted items can never be whitelisted
+                    e.get("source") != "blacklist" and 
+                    nlp_manager.is_whitelisted(e["text"], whitelist)
+                )
             }
             for e in entities
         ]

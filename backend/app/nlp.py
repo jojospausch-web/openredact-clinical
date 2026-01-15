@@ -2,11 +2,13 @@
 NLP Manager for German clinical text analysis using spaCy and Stanza.
 """
 import logging
+import re
 from typing import List, Dict, Any, Set
 import spacy
 import stanza
 from spacy.tokens import Doc
 from app.pii_patterns import regex_detector
+from app.blacklist_manager import blacklist_manager
 
 logger = logging.getLogger(__name__)
 
@@ -76,21 +78,25 @@ class NLPManager:
         return entities
     
     def find_all_entities(self, text: str, use_both: bool = True) -> List[Dict[str, Any]]:
-        """Find entities using NLP AND regex patterns"""
+        """Find entities using blacklist, regex, and NLP"""
         entities = []
         
-        # 1. Regex-based detection FIRST (titles, structured data)
+        # 1. BLACKLIST CHECK FIRST (highest priority!)
+        blacklist_entities = self._find_blacklisted_terms(text)
+        entities.extend(blacklist_entities)
+        
+        # 2. Regex-based detection (titles, structured data)
         regex_entities = regex_detector.find_all(text)
         entities.extend(regex_entities)
         
-        # 2. spaCy entities
+        # 3. spaCy entities
         entities.extend(self.find_entities_spacy(text))
         
-        # 3. Stanza entities (if enabled)
+        # 4. Stanza entities (if enabled)
         if use_both and self.stanza_nlp is not None:
             entities.extend(self.find_entities_stanza(text))
         
-        # 4. Deduplicate overlapping entities
+        # 5. Deduplicate overlapping entities
         entities = self._deduplicate_entities(entities)
         
         return entities
@@ -123,6 +129,50 @@ class NLPManager:
     def _entities_overlap(self, e1: Dict, e2: Dict) -> bool:
         """Check if two entities overlap"""
         return not (e1["end"] <= e2["start"] or e2["end"] <= e1["start"])
+    
+    def _find_blacklisted_terms(self, text: str) -> List[Dict[str, Any]]:
+        """Find all blacklisted terms in text"""
+        entities = []
+        blacklist = blacklist_manager.get_all()
+        
+        for term in blacklist:
+            # Find all occurrences (case-insensitive)
+            pattern = re.compile(re.escape(term), re.IGNORECASE)
+            for match in pattern.finditer(text):
+                entities.append({
+                    "text": match.group(),
+                    "start": match.start(),
+                    "end": match.end(),
+                    "label": "BLACKLISTED",
+                    "source": "blacklist",
+                    "whitelisted": False  # Blacklist overrides whitelist!
+                })
+        
+        return entities
+    
+    def is_whitelisted(self, entity_text: str, whitelist: List[str]) -> bool:
+        """
+        Smart whitelist matching:
+        - Exact match: "NYHA" in whitelist matches "NYHA"
+        - Word match: "NYHA" in whitelist matches "NYHA IV"
+        - Partial match: "Charité" in whitelist matches "Charité Berlin"
+        """
+        # 1. Exact match
+        if entity_text in whitelist:
+            return True
+        
+        # 2. Word-based matching (for "NYHA IV" when "NYHA" is whitelisted)
+        entity_words = entity_text.split()
+        for word in entity_words:
+            if word in whitelist:
+                return True
+        
+        # 3. Partial match (for "Charité Berlin" when "Charité" is whitelisted)
+        for whitelisted_term in whitelist:
+            if whitelisted_term in entity_text:
+                return True
+        
+        return False
 
 
 # Global instance (initialized lazily)

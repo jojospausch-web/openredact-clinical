@@ -37,11 +37,21 @@ class Anonymizer:
         if whitelist is None:
             whitelist = set()
         
-        # Filter entities by whitelist
+        # Import here to avoid circular dependency
+        from app.nlp import get_nlp_manager
+        nlp_manager = get_nlp_manager()
+        
+        # Filter entities by whitelist (using smart matching)
+        whitelist_list = list(whitelist)
         filtered_entities = [
             e for e in entities 
-            if e["text"] not in whitelist
+            # Blacklisted items can never be whitelisted
+            if e.get("source") != "blacklist" and not nlp_manager.is_whitelisted(e["text"], whitelist_list)
         ]
+        
+        # Also include all blacklisted entities (they should always be anonymized)
+        blacklisted_entities = [e for e in entities if e.get("source") == "blacklist"]
+        filtered_entities.extend(blacklisted_entities)
         
         # Sort entities by position (reverse order for safe replacement)
         sorted_entities = sorted(
