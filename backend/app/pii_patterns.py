@@ -41,7 +41,7 @@ class RegexPIIDetector:
     # IBAN (German)
     IBAN_PATTERN = r'\bDE\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{2}\b'
     
-    # Medical titles (FIXED for multi-titles!)
+    # Medical titles (FIXED for multi-title combinations!)
     TITLE_PATTERNS = [
         # Multi-title combinations (Prof. Dr. Name, Dr. Prof. Name)
         r'\b(Prof\.\s+Dr\.|Dr\.\s+Prof\.)\s+(?:med\.\s+)?([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)\b',

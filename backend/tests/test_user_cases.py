@@ -1,5 +1,5 @@
 """
-Tests for user's real-world cases from PR #8.
+Tests for real-world user cases from PR #8.
 """
 import pytest
 from fastapi.testclient import TestClient

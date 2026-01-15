@@ -78,7 +78,17 @@ class NLPManager:
         return entities
     
     def find_all_entities(self, text: str, use_both: bool = True) -> List[Dict[str, Any]]:
-        """Find entities using blacklist, regex, and NLP"""
+        """
+        Find entities using blacklist, regex, and NLP models.
+        
+        Detection order (by priority):
+        1. BLACKLIST - Highest priority, always detected and anonymized
+        2. Regex patterns - Structured data (titles, emails, dates, etc.)
+        3. spaCy NLP - German NER model
+        4. Stanza NLP - Optional secondary German NER model
+        
+        Deduplication prefers blacklist entities over longer spans.
+        """
         entities = []
         
         # 1. BLACKLIST CHECK FIRST (highest priority!)

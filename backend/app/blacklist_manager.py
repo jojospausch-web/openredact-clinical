@@ -33,10 +33,11 @@ class BlacklistManager:
                 with open(self.storage_path, encoding='utf-8') as f:
                     data = json.load(f)
                     if isinstance(data, list):
-                        # Support old format (just a list)
+                        # Legacy format support (just a list) - for backward compatibility
+                        # TODO: Remove in future version after migration period
                         self.blacklist = set(data)
                     else:
-                        # New format with metadata
+                        # Current format with metadata
                         self.blacklist = set(data.get("blacklist", []))
                 logger.info(f"Loaded {len(self.blacklist)} blacklist entries")
             except Exception as e:
