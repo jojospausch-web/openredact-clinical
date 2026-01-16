@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import uuid
+import os
 import PyPDF2
 import pdfplumber
 from datetime import datetime
@@ -8,10 +9,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Configuration - use same pattern as storage.py
+_default_storage = "/app/storage" if os.path.exists("/app") else "/tmp/openredact-storage"
+STORAGE_DIR = Path(os.getenv("OPENREDACT_STORAGE_DIR", _default_storage))
+PDF_STORAGE_DIR = STORAGE_DIR / "pdfs"
+
 class PDFManager:
     """Handles PDF upload, storage, text extraction, and generation"""
     
-    def __init__(self, storage_dir: Path = Path("/app/storage/pdfs")):
+    def __init__(self, storage_dir: Path = PDF_STORAGE_DIR):
         self.storage_dir = storage_dir
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         
