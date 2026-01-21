@@ -19,7 +19,8 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir PyMuPDF
 
 # Download NLP models
 RUN python -m spacy download de_core_news_sm && \

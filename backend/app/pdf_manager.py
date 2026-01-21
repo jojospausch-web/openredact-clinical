@@ -210,6 +210,123 @@ class PDFManager:
         metadata = self._load_all_metadata()
         return list(metadata.values())
     
+    async def anonymize_pdf_hybrid(
+        self,
+        pdf_id: str,
+        template_id: str,
+        redact_header: bool = True,
+        redact_footer: bool = True
+    ) -> str:
+        """
+        Hybrid PDF anonymization with layout preservation
+        
+        Phase 1: Overlay redaction (black rectangles) for all PIIs except dates
+        Phase 2: Date shifting with overlay
+        
+        Args:
+            pdf_id: ID of uploaded PDF
+            template_id: Anonymization template
+            redact_header: Black out header region (logos, letterhead)
+            redact_footer: Black out footer region (phone table, banking info)
+            
+        Returns:
+            ID of anonymized PDF
+        """
+        from app.pdf_overlay_anonymizer import pdf_overlay_anonymizer
+        
+        # Get PDF path
+        pdf_path = self.get_pdf_path(pdf_id)
+        if not pdf_path:
+            raise ValueError(f"PDF {pdf_id} not found")
+        
+        # Extract text for PII detection
+        text = self.extract_text(pdf_path)
+        
+        # Find all PIIs
+        from app.nlp import get_nlp_manager
+        nlp_manager = get_nlp_manager()
+        entities = nlp_manager.find_all_entities(text)
+        
+        # Get template
+        from app.storage import TemplateStorage
+        template = TemplateStorage.get(template_id)
+        if not template:
+            raise ValueError(f"Template {template_id} not found")
+        
+        # Filter whitelisted entities
+        from app.storage import WhitelistStorage
+        whitelist = set(WhitelistStorage.get_all())
+        entities = [e for e in entities if not nlp_manager.is_whitelisted(e["text"], whitelist)]
+        
+        logger.info(f"Hybrid anonymization: {len(entities)} entities to process")
+        
+        # Phase 1: Overlay redaction
+        phase1_path = self.storage_dir / f"phase1_{pdf_id}.pdf"
+        
+        phase1_result = pdf_overlay_anonymizer.anonymize_pdf_hybrid(
+            str(pdf_path),
+            entities,
+            template,
+            str(phase1_path),
+            redact_header=redact_header,
+            redact_footer=redact_footer
+        )
+        
+        date_entities = phase1_result["date_entities"]
+        
+        # Phase 2: Date shifting
+        final_path = self.storage_dir / f"anon_{pdf_id}.pdf"
+        shifted_count = 0
+        
+        if date_entities:
+            shift_months = template.get("mechanisms_by_tag", {}).get("DATE", {}).get("shift_months", 0)
+            shift_days = template.get("mechanisms_by_tag", {}).get("DATE", {}).get("shift_days", 0)
+            
+            shifted_count = pdf_overlay_anonymizer.overlay_shifted_dates(
+                str(phase1_path),
+                date_entities,
+                shift_months,
+                shift_days,
+                str(final_path)
+            )
+            
+            logger.info(f"Date shifting: {shifted_count} dates shifted")
+        else:
+            # No dates to shift, just copy Phase 1 result
+            import shutil
+            shutil.copy(phase1_path, final_path)
+        
+        # Cleanup Phase 1 file
+        try:
+            phase1_path.unlink()
+        except Exception as e:
+            logger.warning(f"Failed to cleanup Phase 1 file: {e}")
+        
+        # Store result
+        anon_pdf_id = str(uuid.uuid4())
+        
+        # Get original metadata for filename
+        original_metadata = self._get_metadata(pdf_id)
+        original_filename = original_metadata.get("original_filename", "document.pdf") if original_metadata else "document.pdf"
+        
+        metadata = {
+            "id": anon_pdf_id,
+            "original_filename": f"anonymized_{original_filename}",
+            "file_path": str(final_path),
+            "file_size_bytes": final_path.stat().st_size,
+            "file_size_mb": round(final_path.stat().st_size / (1024 * 1024), 2),
+            "created_at": datetime.utcnow().isoformat(),
+            "original_pdf_id": pdf_id,
+            "status": "anonymized",
+            "method": "hybrid_overlay",
+            "redacted_count": phase1_result["redacted_count"],
+            "shifted_count": shifted_count
+        }
+        
+        self._save_metadata(anon_pdf_id, metadata)
+        
+        return anon_pdf_id
+    
     # === Helper Methods ===
     
     def _is_valid_pdf(self, content: bytes) -> bool:
