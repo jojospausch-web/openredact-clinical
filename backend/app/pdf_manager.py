@@ -213,7 +213,7 @@ class PDFManager:
     async def anonymize_pdf_hybrid(
         self,
         pdf_id: str,
-        template_id: str,
+        template_id: Optional[str] = None,
         redact_header: bool = True,
         redact_footer: bool = True
     ) -> str:
@@ -225,7 +225,7 @@ class PDFManager:
         
         Args:
             pdf_id: ID of uploaded PDF
-            template_id: Anonymization template
+            template_id: Anonymization template (optional)
             redact_header: Black out header region (logos, letterhead)
             redact_footer: Black out footer region (phone table, banking info)
             
@@ -249,9 +249,20 @@ class PDFManager:
         
         # Get template
         from app.storage import TemplateStorage
-        template = TemplateStorage.get(template_id)
+        template = None
+        if template_id:
+            template = TemplateStorage.get(template_id)
+            if not template:
+                logger.warning(f"Template {template_id} not found, using defaults")
+        
+        # Use default template if none found
         if not template:
-            raise ValueError(f"Template {template_id} not found")
+            template = {
+                "default_mechanism": {"type": "redact"},
+                "mechanisms_by_tag": {
+                    "DATE": {"type": "shift", "shift_months": 0, "shift_days": 0}
+                }
+            }
         
         # Filter whitelisted entities
         from app.storage import WhitelistStorage

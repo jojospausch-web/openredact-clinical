@@ -421,7 +421,7 @@ async def anonymize_pdf(request: AnonymizePDFRequest):
             # Use hybrid overlay method
             anon_pdf_id = await pdf_manager.anonymize_pdf_hybrid(
                 request.pdf_id,
-                request.template_id or "medical",
+                request.template_id,
                 redact_header=request.redact_header,
                 redact_footer=request.redact_footer
             )
@@ -514,6 +514,7 @@ async def anonymize_pdf(request: AnonymizePDFRequest):
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"PDF anonymization failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"PDF anonymization failed: {str(e)}"
