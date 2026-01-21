@@ -10,6 +10,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Constants
+HEADER_REGION_PERCENTAGE = 0.20  # Top 20% of page
+FOOTER_REGION_PERCENTAGE = 0.90  # Bottom 10% of page (starts at 90%)
+DEFAULT_FONT_NAME = "helv"  # Helvetica font
+ENTITY_LABEL_DATE = "DATE"
+PADDING = 2  # Pixels of padding around redacted text
+
 class PDFOverlayAnonymizer:
     """Anonymize PDF by overlaying black rectangles while preserving layout"""
     
@@ -66,7 +73,7 @@ class PDFOverlayAnonymizer:
                         mechanism = self._get_mechanism_for_entity(entity, template)
                         
                         # Skip DATE entities if mechanism is "shift" - handle in Phase 2
-                        if entity["label"] == "DATE" and mechanism.get("type") == "shift":
+                        if entity["label"] == ENTITY_LABEL_DATE and mechanism.get("type") == "shift":
                             date_entities.append(entity)
                             continue
                         
@@ -148,8 +155,8 @@ class PDFOverlayAnonymizer:
         page_height = plumber_page.height
         page_width = plumber_page.width
         
-        # Header = top 20% (logos, certifications, letterhead)
-        header_rect = fitz.Rect(0, 0, page_width, page_height * 0.20)
+        # Header = top portion (logos, certifications, letterhead)
+        header_rect = fitz.Rect(0, 0, page_width, page_height * HEADER_REGION_PERCENTAGE)
         
         # Draw black rectangle
         page.draw_rect(header_rect, color=(0, 0, 0), fill=(0, 0, 0), width=0)
@@ -159,8 +166,8 @@ class PDFOverlayAnonymizer:
         page_height = plumber_page.height
         page_width = plumber_page.width
         
-        # Footer = bottom 10%
-        footer_rect = fitz.Rect(0, page_height * 0.90, page_width, page_height)
+        # Footer = bottom portion
+        footer_rect = fitz.Rect(0, page_height * FOOTER_REGION_PERCENTAGE, page_width, page_height)
         
         # Draw black rectangle
         page.draw_rect(footer_rect, color=(0, 0, 0), fill=(0, 0, 0), width=0)
@@ -202,10 +209,10 @@ class PDFOverlayAnonymizer:
                     j += 1
                 
                 # Calculate bounding box
-                x0 = min(w["x0"] for w in entity_words) - 2
-                x1 = max(w["x1"] for w in entity_words) + 2
-                top = min(w["top"] for w in entity_words) - 2
-                bottom = max(w["bottom"] for w in entity_words) + 2
+                x0 = min(w["x0"] for w in entity_words) - PADDING
+                x1 = max(w["x1"] for w in entity_words) + PADDING
+                top = min(w["top"] for w in entity_words) - PADDING
+                bottom = max(w["bottom"] for w in entity_words) + PADDING
                 
                 # Draw black rectangle
                 rect = fitz.Rect(x0, top, x1, bottom)
@@ -232,10 +239,10 @@ class PDFOverlayAnonymizer:
             if word["text"] == original_date:
                 # 1. Black out original date
                 rect = fitz.Rect(
-                    word["x0"] - 2,
-                    word["top"] - 2,
-                    word["x1"] + 2,
-                    word["bottom"] + 2
+                    word["x0"] - PADDING,
+                    word["top"] - PADDING,
+                    word["x1"] + PADDING,
+                    word["bottom"] + PADDING
                 )
                 page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0), width=0)
                 
@@ -244,11 +251,11 @@ class PDFOverlayAnonymizer:
                 
                 # 3. Insert shifted date text
                 page.insert_text(
-                    (word["x0"], word["bottom"] - 2),
+                    (word["x0"], word["bottom"] - PADDING),
                     shifted_date,
                     fontsize=font_size,
                     color=(0, 0, 0),
-                    fontname="helv"  # Helvetica (standard)
+                    fontname=DEFAULT_FONT_NAME
                 )
                 
                 return True

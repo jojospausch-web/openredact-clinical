@@ -14,6 +14,15 @@ _default_storage = "/app/storage" if os.path.exists("/app") else "/tmp/openredac
 STORAGE_DIR = Path(os.getenv("OPENREDACT_STORAGE_DIR", _default_storage))
 PDF_STORAGE_DIR = STORAGE_DIR / "pdfs"
 
+# Constants
+ENTITY_LABEL_DATE = "DATE"
+DEFAULT_TEMPLATE = {
+    "default_mechanism": {"type": "redact"},
+    "mechanisms_by_tag": {
+        ENTITY_LABEL_DATE: {"type": "shift", "shift_months": 0, "shift_days": 0}
+    }
+}
+
 class PDFManager:
     """Handles PDF upload, storage, text extraction, and generation"""
     
@@ -257,12 +266,7 @@ class PDFManager:
         
         # Use default template if none found
         if not template:
-            template = {
-                "default_mechanism": {"type": "redact"},
-                "mechanisms_by_tag": {
-                    "DATE": {"type": "shift", "shift_months": 0, "shift_days": 0}
-                }
-            }
+            template = DEFAULT_TEMPLATE
         
         # Filter whitelisted entities
         from app.storage import WhitelistStorage
