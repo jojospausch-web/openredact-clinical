@@ -216,8 +216,8 @@ class AnonymizePDFRequest(CamelBaseModel):
     pdf_id: str = Field(..., description="ID of uploaded PDF")
     template_id: Optional[str] = Field(None, description="Template to use")
     preserve_layout: bool = Field(True, description="Use hybrid overlay method to preserve layout")
-    redact_header: bool = Field(True, description="Black out header region (logos, letterhead)")
-    redact_footer: bool = Field(True, description="Black out footer region (phone table, banking)")
+    check_images: bool = Field(True, description="Detect images in PDF")
+    check_images_ocr: bool = Field(False, description="Use OCR to detect text/PIIs in images")
 
 class AnonymizePDFResponse(CamelBaseModel):
     anonymized_pdf_id: str
@@ -229,6 +229,10 @@ class AnonymizePDFResponse(CamelBaseModel):
     method: Optional[str] = Field(None, description="Anonymization method used")
     redacted_count: Optional[int] = Field(None, description="Number of entities redacted")
     shifted_count: Optional[int] = Field(None, description="Number of dates shifted")
+    images_found: Optional[int] = Field(0, description="Number of images detected in PDF")
+    images_with_text: Optional[int] = Field(0, description="Number of images with detected text")
+    warnings: Optional[List[str]] = Field(default_factory=list, description="Warning messages")
+    image_details: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Details about images with PIIs")
 
 class PDFMetadata(CamelBaseModel):
     id: str

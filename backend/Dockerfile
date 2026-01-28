@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     poppler-utils \
     wkhtmltopdf \
+    tesseract-ocr \
+    tesseract-ocr-deu \
     && rm -rf /var/lib/apt/lists/*
 
 # Stage 2: Dependencies
