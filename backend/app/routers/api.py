@@ -409,23 +409,21 @@ async def upload_pdf(file: UploadFile = File(...)):
 @router.post("/anonymize-pdf", response_model=AnonymizePDFResponse)
 async def anonymize_pdf(request: AnonymizePDFRequest):
     """
-    Anonymize PDF with optional layout preservation and image detection
+    Anonymize PDF with optional layout preservation
     
     - preserve_layout=False: Text replacement (current method, loses layout)
-    - preserve_layout=True: Hybrid overlay (preserves layout, blacks out PIIs only, shifts dates)
-    - check_images=True: Detect images in PDF and warn user
-    - check_images_ocr=True: Use OCR to check for PIIs in images
+    - preserve_layout=True: Hybrid overlay (preserves layout, blacks out PIIs, shifts dates)
     """
     
     try:
         # Determine which anonymization method to use
         if request.preserve_layout:
-            # Use hybrid overlay method with image detection
+            # Use hybrid overlay method
             anon_pdf_id = await pdf_manager.anonymize_pdf_hybrid(
                 request.pdf_id,
                 request.template_id,
-                check_images=request.check_images,
-                check_images_ocr=request.check_images_ocr
+                redact_header=request.redact_header,
+                redact_footer=request.redact_footer
             )
             
             # Get metadata for response
@@ -440,11 +438,7 @@ async def anonymize_pdf(request: AnonymizePDFRequest):
                 entities_anonymized=metadata.get("redacted_count", 0) + metadata.get("shifted_count", 0),
                 method="hybrid_overlay",
                 redacted_count=metadata.get("redacted_count", 0),
-                shifted_count=metadata.get("shifted_count", 0),
-                images_found=metadata.get("images_found", 0),
-                images_with_text=metadata.get("images_with_text", 0),
-                warnings=metadata.get("warnings", []),
-                image_details=metadata.get("image_details", []) if request.check_images_ocr else []
+                shifted_count=metadata.get("shifted_count", 0)
             )
         else:
             # Use legacy text replacement method
