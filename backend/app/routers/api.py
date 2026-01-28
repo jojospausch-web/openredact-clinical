@@ -408,113 +408,80 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 @router.post("/anonymize-pdf", response_model=AnonymizePDFResponse)
 async def anonymize_pdf(request: AnonymizePDFRequest):
-    """
-    Anonymize PDF with optional layout preservation
-    
-    - preserve_layout=False: Text replacement (current method, loses layout)
-    - preserve_layout=True: Hybrid overlay (preserves layout, blacks out PIIs, shifts dates)
-    """
+    """Anonymize PDF: extract text → NLP → anonymize → generate new PDF"""
     
     try:
-        # Determine which anonymization method to use
-        if request.preserve_layout:
-            # Use hybrid overlay method
-            anon_pdf_id = await pdf_manager.anonymize_pdf_hybrid(
-                request.pdf_id,
-                request.template_id,
-                redact_header=request.redact_header,
-                redact_footer=request.redact_footer
+        # Get PDF path
+        pdf_path = pdf_manager.get_pdf_path(request.pdf_id)
+        if not pdf_path:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"PDF {request.pdf_id} not found"
             )
-            
-            # Get metadata for response
-            metadata = pdf_manager._get_metadata(anon_pdf_id)
-            
-            return AnonymizePDFResponse(
-                anonymized_pdf_id=anon_pdf_id,
-                original_pdf_id=request.pdf_id,
-                filename=metadata["original_filename"],
-                file_size_mb=metadata["file_size_mb"],
-                entities_found=metadata.get("redacted_count", 0) + metadata.get("shifted_count", 0),
-                entities_anonymized=metadata.get("redacted_count", 0) + metadata.get("shifted_count", 0),
-                method="hybrid_overlay",
-                redacted_count=metadata.get("redacted_count", 0),
-                shifted_count=metadata.get("shifted_count", 0)
+        
+        # Extract text
+        text = pdf_manager.extract_text(pdf_path)
+        if not text:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Could not extract text from PDF"
             )
-        else:
-            # Use legacy text replacement method
-            # Get PDF path
-            pdf_path = pdf_manager.get_pdf_path(request.pdf_id)
-            if not pdf_path:
+        
+        # Get template if specified
+        template_data = None
+        if request.template_id:
+            template_data = TemplateStorage.get(request.template_id)
+            if not template_data:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"PDF {request.pdf_id} not found"
+                    detail=f"Template '{request.template_id}' not found"
                 )
-            
-            # Extract text
-            text = pdf_manager.extract_text(pdf_path)
-            if not text:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Could not extract text from PDF"
-                )
-            
-            # Get template if specified
-            template_data = None
-            if request.template_id:
-                template_data = TemplateStorage.get(request.template_id)
-                if not template_data:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Template '{request.template_id}' not found"
-                    )
-            
-            # Prepare anonymization
-            default_mechanism = AnonymizationMechanism(type="redact")
-            mechanisms_by_tag = {}
-            
-            if template_data:
-                default_mechanism = AnonymizationMechanism(**template_data["default_mechanism"])
-                mechanisms_by_tag = {
-                    tag: AnonymizationMechanism(**mech)
-                    for tag, mech in template_data.get("mechanisms_by_tag", {}).items()
-                }
-            
-            # Find entities
-            nlp_manager = get_nlp_manager()
-            entities = nlp_manager.find_all_entities(text, use_both=True)
-            
-            # Get whitelist
-            whitelist = set(WhitelistStorage.get_all())
-            
-            # Anonymize text
-            anonymization_result = anonymizer.anonymize_text(
-                text=text,
-                entities=entities,
-                default_mechanism=default_mechanism,
-                mechanisms_by_tag=mechanisms_by_tag,
-                whitelist=whitelist
-            )
-            
-            # Generate new PDF
-            pdf_result = pdf_manager.generate_anonymized_pdf(
-                original_pdf_id=request.pdf_id,
-                anonymized_text=anonymization_result["anonymized_text"]
-            )
-            
-            return AnonymizePDFResponse(
-                anonymized_pdf_id=pdf_result["pdf_id"],
-                original_pdf_id=request.pdf_id,
-                filename=pdf_result["filename"],
-                file_size_mb=pdf_result["file_size_mb"],
-                entities_found=anonymization_result["entities_found"],
-                entities_anonymized=anonymization_result["entities_anonymized"],
-                method="text_replacement"
-            )
+        
+        # Prepare anonymization
+        default_mechanism = AnonymizationMechanism(type="redact")
+        mechanisms_by_tag = {}
+        
+        if template_data:
+            default_mechanism = AnonymizationMechanism(**template_data["default_mechanism"])
+            mechanisms_by_tag = {
+                tag: AnonymizationMechanism(**mech)
+                for tag, mech in template_data.get("mechanisms_by_tag", {}).items()
+            }
+        
+        # Find entities
+        nlp_manager = get_nlp_manager()
+        entities = nlp_manager.find_all_entities(text, use_both=True)
+        
+        # Get whitelist
+        whitelist = set(WhitelistStorage.get_all())
+        
+        # Anonymize text
+        anonymization_result = anonymizer.anonymize_text(
+            text=text,
+            entities=entities,
+            default_mechanism=default_mechanism,
+            mechanisms_by_tag=mechanisms_by_tag,
+            whitelist=whitelist
+        )
+        
+        # Generate new PDF
+        pdf_result = pdf_manager.generate_anonymized_pdf(
+            original_pdf_id=request.pdf_id,
+            anonymized_text=anonymization_result["anonymized_text"]
+        )
+        
+        return AnonymizePDFResponse(
+            anonymized_pdf_id=pdf_result["pdf_id"],
+            original_pdf_id=request.pdf_id,
+            filename=pdf_result["filename"],
+            file_size_mb=pdf_result["file_size_mb"],
+            entities_found=anonymization_result["entities_found"],
+            entities_anonymized=anonymization_result["entities_anonymized"]
+        )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"PDF anonymization failed: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"PDF anonymization failed: {str(e)}"
