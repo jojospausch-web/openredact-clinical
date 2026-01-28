@@ -223,30 +223,42 @@ class PDFManager:
         self,
         pdf_id: str,
         template_id: Optional[str] = None,
-        redact_header: bool = True,
-        redact_footer: bool = True
+        check_images: bool = True,
+        check_images_ocr: bool = False
     ) -> str:
         """
-        Hybrid PDF anonymization with layout preservation
+        Hybrid PDF anonymization with layout preservation and image detection
         
-        Phase 1: Overlay redaction (black rectangles) for all PIIs except dates
+        Phase 1: Overlay redaction (black rectangles) for PIIs only (no header/footer)
         Phase 2: Date shifting with overlay
         
         Args:
             pdf_id: ID of uploaded PDF
             template_id: Anonymization template (optional)
-            redact_header: Black out header region (logos, letterhead)
-            redact_footer: Black out footer region (phone table, banking info)
+            check_images: Detect images in PDF
+            check_images_ocr: Use OCR to check for text in images
             
         Returns:
             ID of anonymized PDF
         """
         from app.pdf_overlay_anonymizer import pdf_overlay_anonymizer
+        from app.image_detector import image_detector
         
         # Get PDF path
         pdf_path = self.get_pdf_path(pdf_id)
         if not pdf_path:
             raise ValueError(f"PDF {pdf_id} not found")
+        
+        # Image detection (BEFORE anonymization)
+        image_info = {"total_images": 0, "warnings": [], "images_with_text": 0, "image_details": []}
+        
+        if check_images:
+            image_info = image_detector.detect_images(str(pdf_path))
+            
+            # Optional OCR
+            if check_images_ocr and image_info["total_images"] > 0:
+                ocr_info = image_detector.check_images_for_text(str(pdf_path))
+                image_info.update(ocr_info)
         
         # Extract text for PII detection
         text = self.extract_text(pdf_path)
@@ -275,16 +287,14 @@ class PDFManager:
         
         logger.info(f"Hybrid anonymization: {len(entities)} entities to process")
         
-        # Phase 1: Overlay redaction
+        # Phase 1: Overlay redaction (PIIs only, no header/footer)
         phase1_path = self.storage_dir / f"phase1_{pdf_id}.pdf"
         
         phase1_result = pdf_overlay_anonymizer.anonymize_pdf_hybrid(
             str(pdf_path),
             entities,
             template,
-            str(phase1_path),
-            redact_header=redact_header,
-            redact_footer=redact_footer
+            str(phase1_path)
         )
         
         date_entities = phase1_result["date_entities"]
@@ -317,7 +327,7 @@ class PDFManager:
         except Exception as e:
             logger.warning(f"Failed to cleanup Phase 1 file: {e}")
         
-        # Store result
+        # Store result with image information
         anon_pdf_id = str(uuid.uuid4())
         
         # Get original metadata for filename
@@ -335,7 +345,11 @@ class PDFManager:
             "status": "anonymized",
             "method": "hybrid_overlay",
             "redacted_count": phase1_result["redacted_count"],
-            "shifted_count": shifted_count
+            "shifted_count": shifted_count,
+            "images_found": image_info.get("total_images", 0),
+            "images_with_text": image_info.get("images_with_text", 0),
+            "warnings": image_info.get("warnings", []),
+            "image_details": image_info.get("image_details", [])
         }
         
         self._save_metadata(anon_pdf_id, metadata)

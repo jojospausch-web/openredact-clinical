@@ -1,6 +1,11 @@
 """
 PDF Overlay Anonymizer - Preserves layout while anonymizing
 Uses PyMuPDF to draw black rectangles over PIIs
+
+IMPORTANT: Coordinate System Conversion
+- pdfplumber: Origin at top-left, y increases downward
+- PyMuPDF: Origin at bottom-left, y increases upward
+- Conversion: pymupdf_y = page_height - pdfplumber_y
 """
 
 import fitz  # PyMuPDF
@@ -11,8 +16,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Constants
-HEADER_REGION_PERCENTAGE = 0.20  # Top 20% of page
-FOOTER_REGION_PERCENTAGE = 0.90  # Bottom 10% of page (starts at 90%)
 DEFAULT_FONT_NAME = "helv"  # Helvetica font
 ENTITY_LABEL_DATE = "DATE"
 PADDING = 2  # Pixels of padding around redacted text
@@ -25,20 +28,16 @@ class PDFOverlayAnonymizer:
         pdf_path: str,
         entities: List[Dict[str, Any]],
         template: Dict[str, Any],
-        output_path: str,
-        redact_header: bool = True,
-        redact_footer: bool = True
+        output_path: str
     ) -> Dict[str, Any]:
         """
-        Phase 1: Overlay anonymization (black rectangles for non-date PIIs)
+        Phase 1: Overlay anonymization (black rectangles for PIIs only, no header/footer)
         
         Args:
             pdf_path: Path to original PDF
             entities: All detected PII entities
             template: Anonymization template
             output_path: Output path for Phase 1 result
-            redact_header: Black out header region (top 20%)
-            redact_footer: Black out footer region (bottom 10%)
             
         Returns:
             dict with statistics and date entities for Phase 2
@@ -54,21 +53,12 @@ class PDFOverlayAnonymizer:
                         break
                         
                     fitz_page = doc[page_num]
+                    page_height = plumber_page.height
                     
-                    # 1. Redact header (logos, letterhead)
-                    if redact_header:
-                        self._redact_header_region(fitz_page, plumber_page)
-                        logger.info(f"Page {page_num}: Header redacted")
-                    
-                    # 2. Redact footer (phone table, banking info)
-                    if redact_footer:
-                        self._redact_footer_region(fitz_page, plumber_page)
-                        logger.info(f"Page {page_num}: Footer redacted")
-                    
-                    # 3. Extract words with coordinates
+                    # Extract words with coordinates
                     words = plumber_page.extract_words()
                     
-                    # 4. Redact PIIs (except DATEs if shifting)
+                    # Redact PIIs (except DATEs if shifting)
                     for entity in entities:
                         mechanism = self._get_mechanism_for_entity(entity, template)
                         
@@ -77,8 +67,8 @@ class PDFOverlayAnonymizer:
                             date_entities.append(entity)
                             continue
                         
-                        # Redact all other entities
-                        if self._redact_entity(fitz_page, entity, words):
+                        # Redact all other entities with proper coordinate conversion
+                        if self._redact_entity(fitz_page, entity, words, page_height):
                             redacted_count += 1
             
             # Save Phase 1 result
@@ -128,6 +118,7 @@ class PDFOverlayAnonymizer:
                         break
                         
                     fitz_page = doc[page_num]
+                    page_height = plumber_page.height
                     words = plumber_page.extract_words()
                     
                     for entity in date_entities:
@@ -137,8 +128,8 @@ class PDFOverlayAnonymizer:
                         shifted_date = date_shifter.shift_date(original_date, entity.get("groups"))
                         
                         if shifted_date and shifted_date != original_date:
-                            # Find coordinates and overlay
-                            if self._overlay_shifted_date(fitz_page, original_date, shifted_date, words):
+                            # Find coordinates and overlay with proper conversion
+                            if self._overlay_shifted_date(fitz_page, original_date, shifted_date, words, page_height):
                                 shifted_count += 1
             
             # Save final result
@@ -150,27 +141,6 @@ class PDFOverlayAnonymizer:
         
         return shifted_count
     
-    def _redact_header_region(self, page: fitz.Page, plumber_page):
-        """Black out header region (top 20% of page)"""
-        page_height = plumber_page.height
-        page_width = plumber_page.width
-        
-        # Header = top portion (logos, certifications, letterhead)
-        header_rect = fitz.Rect(0, 0, page_width, page_height * HEADER_REGION_PERCENTAGE)
-        
-        # Draw black rectangle
-        page.draw_rect(header_rect, color=(0, 0, 0), fill=(0, 0, 0), width=0)
-    
-    def _redact_footer_region(self, page: fitz.Page, plumber_page):
-        """Black out footer region (bottom 10% of page)"""
-        page_height = plumber_page.height
-        page_width = plumber_page.width
-        
-        # Footer = bottom portion
-        footer_rect = fitz.Rect(0, page_height * FOOTER_REGION_PERCENTAGE, page_width, page_height)
-        
-        # Draw black rectangle
-        page.draw_rect(footer_rect, color=(0, 0, 0), fill=(0, 0, 0), width=0)
     
     def _get_mechanism_for_entity(self, entity: Dict, template: Dict) -> Dict:
         """Get anonymization mechanism for entity from template"""
@@ -182,10 +152,21 @@ class PDFOverlayAnonymizer:
         
         return template.get("defaultMechanism", {"type": "redact"})
     
-    def _redact_entity(self, page: fitz.Page, entity: Dict, words: List[Dict]) -> bool:
+    def _redact_entity(self, page: fitz.Page, entity: Dict, words: List[Dict], page_height: float) -> bool:
         """
-        Black out a single entity
+        Black out a single entity with proper coordinate conversion
         
+        pdfplumber coordinates: origin top-left, y increases downward
+        PyMuPDF coordinates: origin bottom-left, y increases upward
+        
+        Conversion: pymupdf_y = page_height - pdfplumber_y
+        
+        Args:
+            page: PyMuPDF page object
+            entity: Entity dict with text, label, etc.
+            words: List of words from pdfplumber with coordinates
+            page_height: Height of the page in pdfplumber coordinates
+            
         Returns:
             True if entity was found and redacted
         """
@@ -208,16 +189,21 @@ class PDFOverlayAnonymizer:
                         remaining_text = remaining_text.replace(next_word["text"], "", 1).strip()
                     j += 1
                 
-                # Calculate bounding box
+                # Calculate bounding box in pdfplumber coordinates
                 x0 = min(w["x0"] for w in entity_words) - PADDING
                 x1 = max(w["x1"] for w in entity_words) + PADDING
-                top = min(w["top"] for w in entity_words) - PADDING
-                bottom = max(w["bottom"] for w in entity_words) + PADDING
+                top_plumber = min(w["top"] for w in entity_words) - PADDING
+                bottom_plumber = max(w["bottom"] for w in entity_words) + PADDING
+                
+                # Convert to PyMuPDF coordinates (flip y-axis)
+                y0 = page_height - bottom_plumber
+                y1 = page_height - top_plumber
                 
                 # Draw black rectangle
-                rect = fitz.Rect(x0, top, x1, bottom)
+                rect = fitz.Rect(x0, y0, x1, y1)
                 page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0), width=0)
                 
+                logger.debug(f"Redacted '{entity_text}' at ({x0:.1f}, {y0:.1f}, {x1:.1f}, {y1:.1f})")
                 return True
         
         return False
@@ -227,37 +213,51 @@ class PDFOverlayAnonymizer:
         page: fitz.Page,
         original_date: str,
         shifted_date: str,
-        words: List[Dict]
+        words: List[Dict],
+        page_height: float
     ) -> bool:
         """
-        Overlay shifted date on top of original date
+        Overlay shifted date with proper coordinate conversion
         
+        Args:
+            page: PyMuPDF page object
+            original_date: Original date string
+            shifted_date: Shifted date string
+            words: List of words from pdfplumber
+            page_height: Height of the page in pdfplumber coordinates
+            
         Returns:
             True if date was found and overlaid
         """
         for word in words:
             if word["text"] == original_date:
-                # 1. Black out original date
-                rect = fitz.Rect(
-                    word["x0"] - PADDING,
-                    word["top"] - PADDING,
-                    word["x1"] + PADDING,
-                    word["bottom"] + PADDING
-                )
+                # Convert coordinates from pdfplumber to PyMuPDF
+                x0 = word["x0"] - PADDING
+                x1 = word["x1"] + PADDING
+                top_plumber = word["top"] - PADDING
+                bottom_plumber = word["bottom"] + PADDING
+                
+                # Flip y-axis
+                y0 = page_height - bottom_plumber
+                y1 = page_height - top_plumber
+                
+                # 1. Black out original
+                rect = fitz.Rect(x0, y0, x1, y1)
                 page.draw_rect(rect, color=(0, 0, 0), fill=(0, 0, 0), width=0)
                 
-                # 2. Estimate font size
-                font_size = word["bottom"] - word["top"]
+                # 2. Write shifted date
+                font_size = bottom_plumber - top_plumber
+                text_y = y1 - PADDING  # Slight offset from top
                 
-                # 3. Insert shifted date text
                 page.insert_text(
-                    (word["x0"], word["bottom"] - PADDING),
+                    (x0, text_y),
                     shifted_date,
                     fontsize=font_size,
                     color=(0, 0, 0),
                     fontname=DEFAULT_FONT_NAME
                 )
                 
+                logger.debug(f"Shifted date '{original_date}' → '{shifted_date}'")
                 return True
         
         return False
