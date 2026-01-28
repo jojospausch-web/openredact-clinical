@@ -18,7 +18,6 @@ PyPDF2==3.0.1
 pdfplumber==0.11.0
 pdf2image==1.17.0
 Pillow==10.4.0
-PyMuPDF>=1.23.0  # For PDF overlay anonymization
 
 # Utilities
 python-dateutil==2.9.0
